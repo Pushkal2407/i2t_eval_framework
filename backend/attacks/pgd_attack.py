@@ -1,10 +1,5 @@
 import torch
-
-class BaseAttack:
-    """Interface for adversarial attacks."""
-    def run(self, image: torch.Tensor, target_text: str, **kwargs) -> torch.Tensor:
-        raise NotImplementedError("Subclasses must implement run()")
-
+from .base_attack import BaseAttack  # Adjust this import if your BaseAttack is defined elsewhere
 
 class PGDAttack(BaseAttack):
     """
