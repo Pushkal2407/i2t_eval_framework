@@ -7,12 +7,65 @@ from torchvision import transforms
 # Import modular components
 from models import BLIPModel
 from eval import Evaluator
-from attacks import PGDAttack
+from attacks import PGDAttack, FGSMAttack
 from report import ReportGenerator
 from utils import display_results  # Import the display function
 
 # Optional: Disable file watcher issues for torch (if needed)
 os.environ["TORCH_DONT_LOAD_FALLBACK_MODULES"] = "1"
+
+# Set Streamlit page configuration
+st.set_page_config(
+    page_title="Image-to-Text Evaluation",
+    page_icon="🖼️",
+    layout="wide"
+)
+
+# Inject custom CSS for a colorful and professional UI
+st.markdown(
+    """
+    <style>
+        /* Overall background */
+        .reportview-container {
+            background: #f5f7fa;
+        }
+        .sidebar .sidebar-content {
+            background: #dce8f1;
+        }
+        /* Headings and text */
+        h1, h2, h3, h4, h5, h6 {
+            color: #1f77b4;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .css-1d391kg {  /* container style for inputs/buttons */
+            font-family: 'Segoe UI', sans-serif;
+        }
+        /* Buttons */
+        .stButton > button {
+            background-color: #1f77b4;
+            color: white;
+            border-radius: 10px;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .stSlider > div {
+            font-family: 'Segoe UI', sans-serif;
+        }
+        /* Report styling */
+        .report-box {
+            background: #ffffff;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #ccc;
+            font-family: 'Segoe UI', sans-serif;
+            color: #333;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 @st.cache_resource
 def load_model(model_name: str, device: str):
@@ -29,9 +82,11 @@ def preprocess_image(image, device):
 def main():
     st.title("🖼️ Image-to-Text Evaluation Framework with Adversarial Attacks")
     
-    # Sidebar: Model selection
+    # Sidebar: Model selection and Attack method selection
     st.sidebar.header("🔧 Configuration")
     model_choice = st.sidebar.selectbox("📌 Select Model", ["BLIP-base", "BLIP-large"])
+    attack_choice = st.sidebar.radio("Select Attack Method", ["PGD Attack", "FGSM Attack"])
+    
     model_name = "Salesforce/blip-image-captioning-base" if model_choice == "BLIP-base" else "Salesforce/blip-image-captioning-large"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
@@ -64,17 +119,21 @@ def main():
             st.success("✅ Caption Generated!")
             st.write("**📌 Original Caption:**", original_caption)
         
-        # Display PGD Attack parameters only if caption has been generated
+        # Show attack options only if caption has been generated
         if "original_caption" in st.session_state:
-            st.subheader("⚡ PGD Attack Parameters")
-            epsilon = st.slider("🔧 Set Epsilon (Perturbation Limit)", 0.01, 0.2, 0.05, step=0.01)
-            alpha = st.slider("🔧 Set Alpha (Step Size)", 0.001, 0.05, 0.01, step=0.001)
-            num_steps = st.slider("🔄 Number of PGD Steps", 1, 20, 10)
+            st.subheader("⚡ Attack Parameters")
+            # Attack method-specific parameters
+            if attack_choice == "PGD Attack":
+                epsilon = st.slider("🔧 Set Epsilon (Perturbation Limit)", 0.01, 0.2, 0.05, step=0.01)
+                alpha = st.slider("🔧 Set Alpha (Step Size)", 0.001, 0.05, 0.01, step=0.001)
+                num_steps = st.slider("🔄 Number of PGD Steps", 1, 20, 10)
+            else:  # FGSM Attack
+                epsilon = st.slider("🔧 Set Epsilon for FGSM", 0.01, 0.2, 0.05, step=0.01)
             
-            # PGD Attack button
-            if st.button("🚀 Run PGD Attack"):
-                st.write("✅ PGD Attack button clicked!")  # Debug print
-                with st.spinner("🔄 Running PGD Attack..."):
+            # Attack button
+            if st.button("🚀 Run Attack"):
+                st.write("✅ Attack button clicked!")  # Debug print
+                with st.spinner("🔄 Running Attack..."):
                     try:
                         # Ensure necessary state is available
                         if "image_tensor" not in st.session_state:
@@ -84,13 +143,18 @@ def main():
                             st.error("Original caption not generated. Please generate caption first.")
                             return
                         
-                        # Instantiate attacker and run the PGD attack
-                        st.write("🚀 Initializing PGD Attack...")
-                        attacker = PGDAttack(model, epsilon=epsilon, alpha=alpha, num_steps=num_steps)
-                        adv_image_tensor = attacker.run(st.session_state.image_tensor, target_text="")  # Untargeted attack
-                        st.session_state.adv_image_tensor = adv_image_tensor
+                        # Execute the selected attack
+                        if attack_choice == "PGD Attack":
+                            st.write("🚀 Initializing PGD Attack...")
+                            attacker = PGDAttack(model, epsilon=epsilon, alpha=alpha, num_steps=num_steps)
+                            adv_image_tensor = attacker.run(st.session_state.image_tensor, target_text="")  # Untargeted attack
+                        else:  # FGSM Attack
+                            st.write("🚀 Initializing FGSM Attack...")
+                            attacker = FGSMAttack(model, epsilon=epsilon)
+                            adv_image_tensor = attacker.run(st.session_state.image_tensor, target_text="")  # Untargeted attack
                         
-                        st.write("✅ PGD Attack completed!")
+                        st.session_state.adv_image_tensor = adv_image_tensor
+                        st.write("✅ Attack completed!")
                         
                         # Generate caption for adversarial image
                         with st.spinner("⏳ Generating adversarial caption..."):
@@ -98,7 +162,6 @@ def main():
                             adversarial_result = evaluator.evaluate(adv_image_tensor)
                             adv_caption = adversarial_result["caption"]
                             st.session_state.adv_caption = adv_caption
-                        
                         st.write("✅ Adversarial caption generated:", adv_caption)
                         
                         # Compute perturbation norm
@@ -111,14 +174,14 @@ def main():
                         report = reporter.generate_report(st.session_state.original_result, adversarial_result, l_inf_norm)
                         st.session_state.report = report
                         
-                        # Display results
+                        # Display results with a styled container
                         display_results(st.session_state.image, adv_image_tensor, st.session_state.original_caption, adv_caption)
                         
                         st.subheader("📜 Evaluation Report")
-                        st.text(report)
+                        st.markdown(f"<div class='report-box'>{report}</div>", unsafe_allow_html=True)
                     
                     except Exception as e:
-                        st.error(f"⚠️ Error running PGD Attack: {str(e)}")
+                        st.error(f"⚠️ Error running attack: {str(e)}")
                         import traceback
                         st.text(traceback.format_exc())
         
