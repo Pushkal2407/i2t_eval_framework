@@ -1,2 +1,3 @@
-from .basic_eval import Evaluator
-from .coco_eval import COCOEvaluator
+from .basic_eval import *
+from .coco_eval import *
+
