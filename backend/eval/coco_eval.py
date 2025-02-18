@@ -120,7 +120,7 @@ def evaluate_dataset(coco_dir, model, attacker, num_images=10, device='cpu'):
     
     all_results = []
     
-    for img_id in valid_imgIds:
+    for img_id in tqdm(valid_imgIds, desc="Evaluating Dataset"):
         img_info = coco_caps.loadImgs(img_id)[0]
         image_path = os.path.join(image_dir, img_info["file_name"])
         if not os.path.exists(image_path):
@@ -129,25 +129,25 @@ def evaluate_dataset(coco_dir, model, attacker, num_images=10, device='cpu'):
         result["image_id"] = img_id
         all_results.append(result)
     
-    # Remove non-serializable tensor data before dumping to JSON
+    # Remove non-serializable tensor data from each result.
     for res in all_results:
         if "adv_image_tensor" in res:
             del res["adv_image_tensor"]
 
-    # Save results to CSV
+    # Save results to CSV.
     csv_file = os.path.join(coco_dir, "evaluation_results.csv")
-    import csv
+    fieldnames = [
+        "image_id", "image_name", "normal_caption", "adversarial_caption", "caption_similarity",
+        "MSE", "PSNR", "SSIM", "l_inf_norm"
+    ]
     with open(csv_file, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=[
-            "image_id", "image_name", "normal_caption", "adversarial_caption", "caption_similarity",
-            "MSE", "PSNR", "SSIM", "l_inf_norm"
-        ])
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(all_results)
+        filtered_results = [{k: row[k] for k in fieldnames if k in row} for row in all_results]
+        writer.writerows(filtered_results)
     
-    # Save results to JSON
+    # Save results to JSON.
     json_file = os.path.join(coco_dir, "evaluation_results.json")
-    import json
     with open(json_file, 'w') as f:
         json.dump(all_results, f, indent=4)
     

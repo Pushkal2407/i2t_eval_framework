@@ -6,8 +6,6 @@ from PIL import Image
 from torchvision import transforms
 from pycocotools.coco import COCO
 import pandas as pd
-
-# Import modular components
 from models import BLIPModel
 from eval import Evaluator  # (if needed for legacy evaluation)
 from eval import evaluate_single_image_from_tensor, evaluate_dataset
